@@ -3,19 +3,20 @@
 
 export CO3DV2_DATASET_ROOT=$1
 
-accelerate launch --mixed_precision="no" --multi_gpu -m viewdiff.train \
+# accelerate launch --num_processes=2 --mixed_precision="no" --multi_gpu -m viewdiff.train \
+accelerate launch --num_processes=1 --mixed_precision="no" -m viewdiff.train \
 --finetune-config.io.pretrained_model_name_or_path $2 \
 --finetune-config.io.output_dir $3 \
 --finetune-config.io.experiment_name "train_teddybear" \
 --finetune-config.training.mixed_precision "no" \
 --finetune-config.training.dataloader_num_workers "0" \
 --finetune-config.training.num_train_epochs "1000" \
---finetune-config.training.train_batch_size "4" \
---finetune-config.training.dreambooth_prior_preservation_loss_weight "0.1" \
+--finetune-config.training.train_batch_size "1" \
+--finetune-config.training.dreambooth_prior_preservation_loss_weight "0.0" \
 --finetune_config.training.noise_prediction_type "epsilon" \
 --finetune_config.training.prob_images_not_noisy "0.25" \
 --finetune_config.training.max_num_images_not_noisy "2" \
---finetune_config.training.validation_epochs "1" \
+--finetune_config.training.validation_epochs "50" \
 --finetune_config.training.dreambooth_prior_preservation_every_nth "1" \
 --finetune-config.optimizer.learning_rate "5e-5" \
 --finetune-config.optimizer.vol_rend_learning_rate "1e-3" \

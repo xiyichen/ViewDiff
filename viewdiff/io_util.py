@@ -66,7 +66,7 @@ class IOConfig:
     report_to: Literal["tensorboard", "custom_tensorboard"] = "custom_tensorboard"
     """The integration to report the results and logs to. Supported platforms are `"tensorboard"`"""
 
-    checkpointing_steps: int = 500
+    checkpointing_steps: int = 5000
     """Save a checkpoint of the training state every X updates. These checkpoints are only suitable for resuming
         training using `--resume_from_checkpoint`."""
 
@@ -345,18 +345,30 @@ def save_inference_outputs(
 
     # create list of pil images for attention logging and filename logging (shared)
     # save poses/intrs to dict
+    # import pdb
+    # pdb.set_trace()
     N, K = output.images.shape[:2]
     pil_images = []
     cams = {
         "poses": {},
         "intrs": {}
     }
+    
+    # for n in range(N):
+    #     input_img = torch_to_pil(batch["images"][0][n].detach().cpu())
+    #     file_name = batch["file_names"][0][n]
+    #     with open(
+    #             os.path.join(root_output_path, f"input_file_{file_name}.png"),
+    #             "wb",
+    #         ) as f:
+    #         input_img.save(f)
+        
     for n in range(N):
         for frame_idx in range(K):
             # save the predictions using their original filenames
             file_name = batch["file_names"][frame_idx][n]
-            sequence = os.path.basename(batch["root"][n])
-            key = f"step_{step:04d}_seq_{sequence}_file_{file_name}_frame_{frame_idx:04d}"
+            # sequence = os.path.basename(batch["root"][n])
+            key = f"step_{step:04d}_file_{file_name}_frame_{frame_idx:04d}"
             if io_config.save.pred_files:
                 file_patterns.append("pred_file_")
                 if io_config.save.cond_files or "cond_" not in file_name:

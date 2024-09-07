@@ -3,19 +3,19 @@
 
 export CO3DV2_DATASET_ROOT=$1
 
-accelerate launch --mixed_precision="no" -m viewdiff.train \
+accelerate launch --num_processes=1 --mixed_precision="no" -m viewdiff.train \
 --finetune-config.io.pretrained_model_name_or_path $2 \
 --finetune-config.io.output_dir $3 \
 --finetune-config.io.experiment_name "train_teddybear" \
 --finetune-config.training.mixed_precision "no" \
---finetune-config.training.dataloader_num_workers "0" \
+--finetune-config.training.dataloader_num_workers "1" \
 --finetune-config.training.num_train_epochs "1000" \
 --finetune-config.training.train_batch_size "1" \
---finetune-config.training.dreambooth_prior_preservation_loss_weight "0.1" \
+--finetune-config.training.dreambooth_prior_preservation_loss_weight "0.0" \
 --finetune_config.training.noise_prediction_type "epsilon" \
---finetune_config.training.prob_images_not_noisy "0.25" \
+--finetune_config.training.prob_images_not_noisy "1" \
 --finetune_config.training.max_num_images_not_noisy "2" \
---finetune_config.training.validation_epochs "1" \
+--finetune_config.training.validation_epochs "50" \
 --finetune_config.training.dreambooth_prior_preservation_every_nth "1" \
 --finetune-config.optimizer.learning_rate "5e-5" \
 --finetune-config.optimizer.vol_rend_learning_rate "1e-3" \
@@ -43,10 +43,10 @@ accelerate launch --mixed_precision="no" -m viewdiff.train \
 --finetune-config.model.pose_cond_mode "sa-ca" \
 --finetune-config.model.pose_cond_coord_space "absolute" \
 --finetune-config.model.pose_cond_lora_rank "64" \
---finetune-config.model.n_input_images "3" \
+--finetune-config.model.n_input_images "5" \
 --dataset-config.co3d-root $CO3DV2_DATASET_ROOT \
 --dataset-config.category $4 \
---dataset-config.max_sequences 50 \
+--dataset-config.max_sequences "2" \
 --dataset-config.batch.load_recentered \
 --dataset-config.batch.use_blip_prompt \
 --dataset-config.batch.crop "random" \
@@ -61,4 +61,4 @@ accelerate launch --mixed_precision="no" -m viewdiff.train \
 --validation-dataset-config.batch.crop "random" \
 --validation-dataset-config.batch.image_width "256" \
 --validation-dataset-config.batch.image_height "256" \
---validation-dataset-config.dataset_args.n_frames_per_sequence "3"
+--validation-dataset-config.dataset_args.n_frames_per_sequence "3" \

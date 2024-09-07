@@ -10,3 +10,6 @@ __pycache__/
 
 *.pt
 *egg-info/
+outputs*/
+stable-diffusion-2-1-base/
+hub/

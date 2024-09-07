@@ -5,7 +5,7 @@ import ffmpeg
 
 
 def main(args):
-    ffmpeg_bin = "/usr/bin/ffmpeg"
+    ffmpeg_bin = "ffmpeg"
     (
         ffmpeg.input(
             f"{args.image_folder}/{args.file_name_pattern_glob}", pattern_type="glob", framerate=args.framerate

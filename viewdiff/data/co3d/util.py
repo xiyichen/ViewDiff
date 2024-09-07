@@ -10,7 +10,6 @@ from pytorch3d.implicitron.dataset.json_index_dataset_map_provider_v2 import Jso
 from pytorch3d.implicitron.dataset.json_index_dataset import JsonIndexDataset
 from pytorch3d.implicitron.tools.config import expand_args_fields
 
-
 def json_index_dataset_load_category(dataset_root: str, category: str, dataset_args: DictConfig):
     # adapted from https://github.com/facebookresearch/pytorch3d/blob/main/pytorch3d/implicitron/dataset/json_index_dataset_map_provider_v2.py
     frame_file = os.path.join(

@@ -19,7 +19,7 @@ python -m viewdiff.test \
 --dataset-config.batch.other_selection "random" \
 --dataset-config.batch.load_recentered \
 --dataset-config.batch.crop "foreground" \
---dataset-config.batch.prompt "a $4" \
+--dataset-config.batch.prompt "" \
 --dataset-config.batch.image_width 256 \
 --dataset-config.batch.image_height 256 \
---dataset-config.dataset_args.load_masks
+# --dataset-config.dataset_args.load_masks

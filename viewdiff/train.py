@@ -3,6 +3,7 @@
 from typing import Optional, List, Dict
 
 import os
+os.environ['HF_HOME'] = './'
 import tyro
 import numpy as np
 import torch
@@ -70,16 +71,83 @@ from .metrics.image_metrics import calc_psnr_ssim_lpips
 from .data.co3d.co3d_dataset import CO3DConfig
 
 from .scripts.misc.create_masked_images import remove_background
-
+import pdb
+# from .test import select_as_known
+from .data.co3d.co3d_dataset import CO3DConfig, CO3DDataset
 
 logger = get_logger(__name__, log_level="INFO")
 
+def combine_batches(known_batch, new_batch):
+    def duplicate_known(key: str):
+        N = known_batch[key].shape[1] + new_batch[key].shape[1]
+        x = known_batch[key][:, 0:1]
+        x = x.repeat(1, N, *[1] * len(new_batch[key].shape[2:]))
+        return x
+
+    batch = {
+        "prompt": known_batch["prompt"],  # override, can be different, but should be same as old # [N,]
+        "images": torch.cat([known_batch["images"], new_batch["images"]], dim=1),  # first the known, then new
+        "pose": torch.cat([known_batch["pose"], new_batch["pose"]], dim=1),  # first the known, then new # (N, n_known_images + n_input_images, 4, 4)
+        "intensity_stats": duplicate_known("intensity_stats"),
+        "K": duplicate_known("K"),
+        "known_images": known_batch["known_images"] if "known_images" not in new_batch else torch.cat([known_batch["known_images"], new_batch["known_images"]], dim=1),
+        "bbox": new_batch["bbox"],  # should be the same as in known_batch
+        # "root": new_batch["root"],  # should be the same as in known_batch
+        "file_names": [*known_batch["file_names"], *new_batch["file_names"]],  # first the known, then new
+        "selected_indices": new_batch["selected_indices"]
+    }
+
+    if "foreground_prob" in known_batch and "foreground_prob" in new_batch:
+        batch["foreground_prob"] = torch.cat([known_batch["foreground_prob"], new_batch["foreground_prob"]], dim=1)  # first the known, then new
+
+    return batch
+
+def subsample_batch(x, indices, output=None, keep_known_images: bool = False, mark_filename_as_cond: bool = True):
+    # pdb.set_trace()
+    batch = {
+        "prompt": x["prompt"],
+        "images": x["images"][:, indices],
+        "pose": x["pose"][:, indices],
+        "intensity_stats": x["intensity_stats"][:, indices],
+        "K": x["K"][:, indices],
+        "bbox": x["bbox"],
+        "file_names": [tuple(f"cond_{xi}" if mark_filename_as_cond and "cond" not in xi else xi for xi in x) for x in [x["file_names"][i] for i in indices]],
+        # "root": x["root"],
+        "selected_indices": x["selected_indices"]
+    }
+
+    if "foreground_prob" in x:
+        batch["foreground_prob"] = x["foreground_prob"][:, indices]
+
+    # if "known_images" in x or output is not None:
+    #     batch["known_images"] = x["known_images"][:, indices] if keep_known_images else output.images[:, indices].cpu() * 2 - 1
+
+    return batch
+
+def select_as_known(batch, n_images: int = 1):
+    known_batch = {}
+    for k, v in batch.items():
+        if isinstance(v, torch.Tensor):
+            known_batch[k] = v[:, 0:n_images].clone()
+            if k == "images":
+                known_batch["known_images"] = v[:, 0:n_images].clone()
+        elif k == "root" or k == "prompt":
+            known_batch[k] = v
+        elif k == "file_names":
+            known_batch[k] = [tuple(f"cond_{xi}" for xi in x) for x in v[0:n_images]]
+        else:
+            raise ValueError(k, v)
+
+    return known_batch
 
 def train_and_test(
     dataset_config: CO3DConfig,
     finetune_config: FinetuneConfig,
     validation_dataset_config: CO3DConfig,
-):
+):  
+    
+    # validation_dataset = CO3DDataset(validation_dataset_config)
+    
     # manually update required fields in the config
     finetune_config.training = check_local_rank(finetune_config.training)
     dataset_config.batch.n_parallel_images = finetune_config.model.n_input_images
@@ -89,6 +157,7 @@ def train_and_test(
     setup_output_directories(
         io_config=finetune_config.io, model_config=finetune_config.model, dataset_config=dataset_config, is_train=True
     )
+    
     accelerator, generator = setup_accelerate(
         finetune_config=finetune_config, dataset_config=dataset_config, logger=logger
     )
@@ -223,6 +292,29 @@ def train_and_test(
             pipeline.set_progress_bar_config(disable=False)
             pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config)
             pipeline.scheduler.config.prediction_type = finetune_config.training.noise_prediction_type
+
+            ###
+            # actual_step = 0
+            # known_batch = collate_batch(validation_batch)
+            # pdb.set_trace()
+            # validation_batch = select_as_known(validation_batch, n_images=1)
+            # validation_batch["known_images"] = validation_batch["images"][:, 0:1].clone()
+
+            # for first batch: other images are spread out equally (similar to DFM)
+            # dataset.config.batch.sequence_offset = 40
+            # actual_step = 40
+            # if known_batch is not None:
+                # batch = combine_batches(known_batch, validation_batch)
+            # validation_batch["intensity_stats"] *= 0
+            # pdb.set_trace()
+            print(validation_batch["selected_indices"])
+            known_batch = select_as_known(validation_batch, n_images=1)
+            keep_indices = np.array([x for x in range(1, 5)])
+            validation_batch = subsample_batch(validation_batch, keep_indices, mark_filename_as_cond=False)
+            validation_batch = combine_batches(known_batch, validation_batch)
+            validation_batch["intensity_stats"] *= 0
+            
+            ###
 
             # run inference on one batch of the validation set
             test_step(
@@ -469,11 +561,11 @@ def train_step(
         # parse batch
         # collapse K dimension into batch dimension (no concatenation happening)
         batch["prompt"] = collapse_prompt_to_batch_dim(batch["prompt"], finetune_config.model.n_input_images)
-        batch_size, pose = collapse_tensor_to_batch_dim(batch["pose"])
-        _, K = collapse_tensor_to_batch_dim(batch["K"])
+        batch_size, pose = collapse_tensor_to_batch_dim(batch["pose"]) # b, n, 3, h, w -> b*n, 1, 3, h, w
+        _, K = collapse_tensor_to_batch_dim(batch["K"]) # b, n, 3, 3 -> b*n, 1, 3, 3
         _, intensity_stats = collapse_tensor_to_batch_dim(batch["intensity_stats"])
-        pose = pose.squeeze(1)
-        K = K.squeeze(1)[..., :3, :3]
+        pose = pose.squeeze(1) # b*n, 3, h, w
+        K = K.squeeze(1)[..., :3, :3] # b*n, 3, 3
         intensity_stats = intensity_stats.squeeze(1)
         bbox = batch["bbox"]
         log_prefix = ""
@@ -493,11 +585,11 @@ def train_step(
             bbox=bbox,
             orig_hw=orig_hw,
         )
-
+        # pdb.set_trace()
         if "images" in batch:
             # convert images to latent space.
-            _, images = collapse_tensor_to_batch_dim(batch["images"])
-            images = images.squeeze(1)
+            _, images = collapse_tensor_to_batch_dim(batch["images"]) # 
+            images = images.squeeze(1) # b*n, 3, h, w
             images = images[:, :3].to(weight_dtype)  # remove alpha channel
             latents = vae.encode(images).latent_dist.sample()
             latents = latents * vae.config.scaling_factor
@@ -516,8 +608,10 @@ def train_step(
         timesteps = timesteps.repeat_interleave(finetune_config.model.n_input_images)
 
         # check if some timesteps within the batch will be replaced with 0 (== non-noisy image)
+        # pdb.set_trace()
         if not is_dreambooth and finetune_config.training.prob_images_not_noisy > 0:
             random_p_non_noisy = torch.rand((batch_size, finetune_config.model.n_input_images), device=latents.device, generator=generator)
+            # pdb.set_trace()
             non_noisy_mask = random_p_non_noisy < finetune_config.training.prob_images_not_noisy
             non_noisy_mask[:, finetune_config.training.max_num_images_not_noisy:] = False
             non_noisy_mask = non_noisy_mask.flatten()
@@ -737,12 +831,16 @@ def test_step(
 
     # parse batch
     # collapse K dimension into batch dimension (no concatenation happening)
+    
+    # pdb.set_trace()
     prompt = collapse_prompt_to_batch_dim(batch["prompt"], model_config.n_input_images)
     _, pose = collapse_tensor_to_batch_dim(batch["pose"])
     _, K = collapse_tensor_to_batch_dim(batch["K"])
     _, intensity_stats = collapse_tensor_to_batch_dim(batch["intensity_stats"])
     bbox = batch["bbox"]
+    # pdb.set_trace()
 
+    # batch["known_images"] = batch["images"][:,:1]
     if "known_images" in batch and batch["known_images"] is not None:
         assert batch_size == 1, "sliding window currently only supported for batch-size 1"
         # TODO need to handle padding in collapse for bs>1
@@ -791,6 +889,7 @@ def test_step(
     all_lpipses = []
     all_ssims = []
     for _ in range(n_repeat_generation):
+        # pdb.set_trace()
         output = pipeline(
             prompt=prompt,
             height=orig_hw[0],
@@ -905,17 +1004,17 @@ def test_step(
             }
         }
 
-    try:
-        save_inference_outputs(
-            batch=batch,
-            output=output,
-            io_config=io_config,
-            writer=writer,
-            step=global_step,
-            prefix=prefix,
-        )
-    except Exception as e:
-        print("writing inference outputs failed", e)
+    # try:
+    save_inference_outputs(
+        batch=batch,
+        output=output,
+        io_config=io_config,
+        writer=writer,
+        step=global_step,
+        prefix=prefix,
+    )
+    # except Exception as e:
+    #     print("writing inference outputs failed", e)
 
     return output
 

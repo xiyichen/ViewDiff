@@ -84,7 +84,8 @@ class TrainingConfig:
     dreambooth_prior_preservation_every_nth: int = 5
     """Calculates the prior preservation loss every nth step."""
 
-    prob_images_not_noisy: float = 0.25
+    # prob_images_not_noisy: float = 0.25
+    prob_images_not_noisy: float = 1
     """With this probability, some of the images in a batch will be not noisy (e.g. input image conditioning)."""
 
     max_num_images_not_noisy: int = 2
@@ -292,6 +293,7 @@ def check_local_rank(training_config: TrainingConfig):
 
 
 def setup_accelerate(finetune_config: FinetuneConfig, dataset_config: CO3DConfig, logger):
+    # print('here')
     logging_dir = os.path.join(finetune_config.io.output_dir, finetune_config.io.logging_dir)
     accelerator_project_config = ProjectConfiguration(
         project_dir=finetune_config.io.output_dir,
@@ -580,7 +582,7 @@ def setup_train_val_dataloaders(
         train_dataset = CO3DDataset(dataset_config)
     else:
         raise NotImplementedError("unsupported dataset_config", type(dataset_config))
-
+    
     # DataLoaders creation:
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
